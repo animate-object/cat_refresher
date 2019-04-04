@@ -5,7 +5,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
-import Json.Decode exposing (Decoder, field, string)
+import Json.Decode exposing (Decoder, field, map2, string)
 
 
 
@@ -26,15 +26,21 @@ main =
 
 
 type alias Model =
-    { response : Response
-    , previousResults : List String
+    { response : ApiResponse
+    , previousResults : List ImageMeta
     }
 
 
-type Response
+type ApiResponse
     = Failure
     | Loading
-    | Success String
+    | Success ImageMeta
+
+
+type alias ImageMeta =
+    { url : String
+    , title : String
+    }
 
 
 
@@ -52,7 +58,8 @@ init _ =
 
 type Msg
     = MorePlease
-    | GotGif (Result Http.Error String)
+    | GotGif (Result Http.Error ImageMeta)
+    | LoadPrevious ImageMeta
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -63,11 +70,14 @@ update msg model =
 
         GotGif result ->
             case result of
-                Ok url ->
-                    ( Model (Success url) (url :: model.previousResults), Cmd.none )
+                Ok imageMeta ->
+                    ( Model (Success imageMeta) (imageMeta :: model.previousResults), Cmd.none )
 
                 Err _ ->
                     ( Model Failure model.previousResults, Cmd.none )
+
+        LoadPrevious imageMeta ->
+            ( Model (Success imageMeta) model.previousResults, Cmd.none )
 
 
 
@@ -114,6 +124,7 @@ view model =
                 [ style "width" "50%"
                 , style "background-color" "pink"
                 , style "height" "100%"
+                , style "overflow" "auto"
                 ]
                 [ previousUrls model ]
             ]
@@ -132,7 +143,7 @@ viewGif model =
         Loading ->
             text "Loading..."
 
-        Success url ->
+        Success imageMeta ->
             div
                 [ style "display" "flex"
                 , style "flex-direction" "column"
@@ -150,7 +161,7 @@ viewGif model =
                         [ text "More Please!" ]
                     ]
                 , img
-                    [ src url
+                    [ src imageMeta.url
                     , style "min-width" "100%"
                     , style "flex-grow" "1"
                     ]
@@ -167,16 +178,20 @@ getRandomCatGif =
     Http.get { url = "https://api.giphy.com/v1/gifs/random?api_key=dc6zaTOxFJmzC&tag=cat", expect = Http.expectJson GotGif gifDecoder }
 
 
-gifDecoder : Decoder String
+gifDecoder : Decoder ImageMeta
 gifDecoder =
-    field "data" (field "image_url" string)
+    map2 ImageMeta (field "data" (field "image_url" string)) (field "data" (field "title" string))
+
+
+
+-- field "data" (field "image_url" string)
 
 
 previousUrls : Model -> Html Msg
 previousUrls model =
-    ol [] (List.map listItem model.previousResults)
+    ol [] (List.reverse (List.map listItem model.previousResults))
 
 
-listItem : String -> Html Msg
+listItem : ImageMeta -> Html Msg
 listItem content =
-    li [] [ Html.a [ href content, target "_" ] [ text content ] ]
+    li [] [ button [ onClick (LoadPrevious content), target "_" ] [ text content.title ] ]
