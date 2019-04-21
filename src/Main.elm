@@ -28,6 +28,18 @@ main =
 type alias Model =
     { response : ApiResponse
     , previousResults : List ImageMeta
+    , favorites : List ImageMeta
+    , viewState : ViewState
+    }
+
+
+type DataPanelState
+    = Favorites
+    | PreviousResults
+
+
+type alias ViewState =
+    { dataPanel : DataPanelState
     }
 
 
@@ -43,13 +55,9 @@ type alias ImageMeta =
     }
 
 
-
--- init defines a nullary function returning a Model and a Command<Message>
-
-
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Model Loading [], getRandomCatGif )
+    ( Model Loading [] [] (ViewState PreviousResults), getRandomCatGif )
 
 
 
@@ -60,24 +68,32 @@ type Msg
     = MorePlease
     | GotGif (Result Http.Error ImageMeta)
     | LoadPrevious ImageMeta
+    | SaveFavorite ImageMeta
+    | UpdateViewState ViewState
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         MorePlease ->
-            ( Model Loading model.previousResults, getRandomCatGif )
+            ( { model | response = Loading }, getRandomCatGif )
 
         GotGif result ->
             case result of
                 Ok imageMeta ->
-                    ( Model (Success imageMeta) (imageMeta :: model.previousResults), Cmd.none )
+                    ( { model | response = Success imageMeta, previousResults = imageMeta :: model.previousResults }, Cmd.none )
 
                 Err _ ->
-                    ( Model Failure model.previousResults, Cmd.none )
+                    ( { model | response = Failure }, Cmd.none )
 
         LoadPrevious imageMeta ->
-            ( Model (Success imageMeta) model.previousResults, Cmd.none )
+            ( { model | response = Success imageMeta }, Cmd.none )
+
+        SaveFavorite imageMeta ->
+            ( { model | favorites = imageMeta :: model.favorites }, Cmd.none )
+
+        UpdateViewState newViewState ->
+            ( { model | viewState = newViewState }, Cmd.none )
 
 
 
@@ -118,6 +134,8 @@ view model =
                 [ style "width" "50%"
                 , style "background-color" "lightblue"
                 , style "height" "100%"
+                , style "display" "flex"
+                , style "flex-direction" "column"
                 ]
                 [ viewGif model ]
             , div
@@ -126,9 +144,51 @@ view model =
                 , style "height" "100%"
                 , style "overflow" "auto"
                 ]
-                [ previousUrls model ]
+                [ dataPanelViewToggle model
+                , dataPanel model
+                ]
             ]
         ]
+
+
+dataPanel : Model -> Html Msg
+dataPanel model =
+    case model.viewState.dataPanel of
+        Favorites ->
+            favorites model
+
+        PreviousResults ->
+            previousResults model
+
+
+favorites : Model -> Html Msg
+favorites model =
+    savedItems model.favorites
+
+
+dataPanelViewToggle : Model -> Html Msg
+dataPanelViewToggle model =
+    case model.viewState.dataPanel of
+        Favorites ->
+            button
+                [ style "width" "100%"
+                , style "display" "block"
+                , style "height" "8rem"
+                , style "font-size" "2rem"
+                , onClick (UpdateViewState { dataPanel = PreviousResults })
+                ]
+                [ text "Go To Previous Results" ]
+
+        PreviousResults ->
+            button
+                [ style "width" "100%"
+                , style "display" "block"
+                , style "height" "8rem"
+                , style "font-size" "2rem"
+                , onClick
+                    (UpdateViewState { dataPanel = Favorites })
+                ]
+                [ text "Go To All Time Favorites" ]
 
 
 viewGif : Model -> Html Msg
@@ -141,32 +201,53 @@ viewGif model =
                 ]
 
         Loading ->
-            text "Loading..."
+            div
+                [ style "height" "8rem", style "width" "100%", style "height" "10rem" ]
+                [ text "Loading. . ." ]
 
         Success imageMeta ->
             div
                 [ style "display" "flex"
                 , style "flex-direction" "column"
+                , style "flex-grow" "1"
                 ]
-                [ div
-                    [ style "display" "flex"
+                [ button
+                    [ onClick MorePlease
+                    , style "display" "block"
+                    , style "height" "8rem"
+                    , style "font-size" "2em"
+                    , style "width" "100%"
                     ]
-                    [ button
-                        [ onClick MorePlease
-                        , style "display" "block"
-                        , style "height" "10rem"
-                        , style "font-size" "2em"
-                        , style "width" "100%"
-                        ]
-                        [ text "More Please!" ]
-                    ]
+                    [ text "More Please!" ]
                 , img
                     [ src imageMeta.url
-                    , style "min-width" "100%"
                     , style "flex-grow" "1"
                     ]
                     []
+                , button
+                    [ onClick (SaveFavorite imageMeta)
+                    , style "display" "block"
+                    , style "height" "8rem"
+                    , style "font-size" "2em"
+                    , style "width" "100%"
+                    ]
+                    [ text "Save to Favorites" ]
                 ]
+
+
+previousResults : Model -> Html Msg
+previousResults model =
+    savedItems model.previousResults
+
+
+savedItems : List ImageMeta -> Html Msg
+savedItems images =
+    ol [] (List.reverse (List.map listItem images))
+
+
+listItem : ImageMeta -> Html Msg
+listItem content =
+    li [] [ button [ onClick (LoadPrevious content), target "_" ] [ text content.title ] ]
 
 
 
@@ -181,17 +262,3 @@ getRandomCatGif =
 gifDecoder : Decoder ImageMeta
 gifDecoder =
     map2 ImageMeta (field "data" (field "image_url" string)) (field "data" (field "title" string))
-
-
-
--- field "data" (field "image_url" string)
-
-
-previousUrls : Model -> Html Msg
-previousUrls model =
-    ol [] (List.reverse (List.map listItem model.previousResults))
-
-
-listItem : ImageMeta -> Html Msg
-listItem content =
-    li [] [ button [ onClick (LoadPrevious content), target "_" ] [ text content.title ] ]
